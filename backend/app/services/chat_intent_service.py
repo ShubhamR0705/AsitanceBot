@@ -120,6 +120,9 @@ class ChatIntentService:
         if has_irrelevant_request and not has_problem_cue:
             return ChatIntentResult(ChatIntentType.IRRELEVANT, compact, 0.9, "Out-of-scope request.")
 
+        if escalation_requested:
+            return ChatIntentResult(ChatIntentType.SUPPORT_REQUEST, cleaned or compact, 0.88, "Human handoff requested.", True)
+
         if has_support and cleaned_lower:
             return ChatIntentResult(ChatIntentType.SUPPORT_REQUEST, cleaned, min(0.95, 0.55 + support_score * 0.08), "Support cues detected.", escalation_requested)
 

@@ -71,3 +71,10 @@ class Message(Base):
 
     conversation = relationship("Conversation", back_populates="messages")
     feedback = relationship("MessageFeedback", back_populates="message", cascade="all, delete-orphan")
+
+    @property
+    def actions(self) -> list[dict]:
+        if not self.meta:
+            return []
+        actions = self.meta.get("actions")
+        return actions if isinstance(actions, list) else []

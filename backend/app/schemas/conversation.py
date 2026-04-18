@@ -6,12 +6,21 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.conversation import ConversationStage, ConversationStatus, MessageSender
 
 
+class ChatActionRead(BaseModel):
+    label: str
+    type: Literal["link", "internal_route", "trigger"]
+    url: str | None = None
+    route: str | None = None
+    trigger: str | None = None
+
+
 class MessageRead(BaseModel):
     id: int
     conversation_id: int
     sender: MessageSender
     content: str
     meta: dict | None = None
+    actions: list[ChatActionRead] = Field(default_factory=list)
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

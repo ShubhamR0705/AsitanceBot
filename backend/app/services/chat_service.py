@@ -9,6 +9,8 @@ from app.models.message_feedback import MessageFeedback
 from app.models.ticket import Ticket
 from app.models.user import User
 from app.repositories.conversation_repository import ConversationRepository
+from app.services.action_registry import ActionRegistry
+from app.services.approval_workflow_service import ApprovalWorkflowService
 from app.services.chat_intent_service import ChatIntentResult, ChatIntentService, ChatIntentType
 from app.services.classification_service import ClassificationService
 from app.services.escalation_service import EscalationService
@@ -52,6 +54,8 @@ class ChatService:
         self.understanding_service = understanding_service or IssueUnderstandingService()
         self.intent_router = ChatIntentService()
         self.triage = TriageService()
+        self.actions = ActionRegistry()
+        self.approvals = ApprovalWorkflowService(db)
 
     def create_conversation(self, user: User) -> Conversation:
         return self.conversations.create(user.id)
@@ -125,11 +129,57 @@ class ChatService:
             last_triage=triage_decision.to_meta(),
         )
 
+        if self.approvals.is_software_install_request(support_text, triage_decision.collected_context):
+            ticket = self.approvals.create_install_request(
+                user=user,
+                conversation=conversation,
+                text=support_text,
+                context=triage_decision.collected_context,
+                triage=triage_decision.to_meta(),
+            )
+            conversation = self.conversations.update_state(
+                conversation,
+                status=ConversationStatus.ESCALATED,
+                triage_stage=ConversationStage.ESCALATED,
+                escalation_summary=(
+                    f"Software installation approval request for {ticket.requested_software}. "
+                    f"Approval status: {ticket.approval_status.value}."
+                ),
+            )
+            actions = self.actions.escalation_actions(ticket.id)
+            assistant_message = self.conversations.add_message(
+                conversation,
+                MessageSender.ASSISTANT,
+                (
+                    f"I created software installation request ticket #{ticket.id} for {ticket.requested_software}. "
+                    "It is pending admin approval before a technician proceeds."
+                ),
+                meta={
+                    "ticket_id": ticket.id,
+                    "request_type": ticket.request_type.value,
+                    "approval_required": ticket.approval_required,
+                    "approval_status": ticket.approval_status.value,
+                    "requested_software": ticket.requested_software,
+                    "actions": actions,
+                    **triage_decision.to_meta(),
+                },
+            )
+            conversation = self.conversations.get(conversation.id) or conversation
+            return ChatResult(
+                conversation=conversation,
+                assistant_message=assistant_message,
+                category="SOFTWARE",
+                kb_titles=[],
+                escalated=True,
+                ticket=ticket,
+            )
+
         if triage_decision.action == TriageAction.ASK_CLARIFYING_QUESTIONS:
             structured_questions = self.triage.guided_questions.sanitize_all(triage_decision.structured_questions, category)
             question_meta = self._structured_question_meta(structured_questions)
             triage_meta = triage_decision.to_meta()
             triage_meta["structured_questions"] = structured_questions
+            actions = self._support_actions(category, triage_decision.confidence, has_support_path=True)
             assistant_message = self.conversations.add_message(
                 conversation,
                 MessageSender.ASSISTANT,
@@ -142,6 +192,7 @@ class ChatService:
                     "matched_keywords": classification.matched_keywords,
                     "intent_type": intent.intent_type.value,
                     "intent_confidence": intent.confidence,
+                    "actions": actions,
                     **triage_meta,
                     **question_meta,
                 },
@@ -164,6 +215,7 @@ class ChatService:
             )
             conversation = self.conversations.get(conversation.id) or conversation
             ticket = self.escalation.escalate(conversation, summary=summary)
+            actions = self.actions.escalation_actions(ticket.id)
             assistant_message = self.conversations.add_message(
                 conversation,
                 MessageSender.ASSISTANT,
@@ -174,6 +226,7 @@ class ChatService:
                 meta={
                     "ticket_id": ticket.id,
                     "escalated": True,
+                    "actions": actions,
                     "intent_type": intent.intent_type.value,
                     "intent_confidence": intent.confidence,
                     **triage_decision.to_meta(),
@@ -209,6 +262,7 @@ class ChatService:
             is_retry=False,
         )
         assistant_text = generated_response.content or self._build_assistant_response(category, entries, conversation.failure_count + 1)
+        actions = self._support_actions(category, triage_decision.confidence, has_support_path=bool(entries))
         if similar_issue:
             assistant_text = (
                 f"You had a similar {category.replace('_', ' ').lower()} issue in ticket #{similar_issue.id}. "
@@ -233,6 +287,7 @@ class ChatService:
                 "response_source": generated_response.source,
                 "response_error": generated_response.error,
                 "similar_ticket_id": similar_issue.id if similar_issue else None,
+                "actions": actions,
                 **triage_decision.to_meta(),
             },
         )
@@ -294,6 +349,7 @@ class ChatService:
             )
             conversation = self.conversations.get(conversation.id) or conversation
             ticket = self.escalation.escalate(conversation, summary=summary)
+            actions = self.actions.escalation_actions(ticket.id)
             assistant_message = self.conversations.add_message(
                 conversation,
                 MessageSender.ASSISTANT,
@@ -301,7 +357,7 @@ class ChatService:
                     "I escalated this to a technician because the guided fixes did not resolve it. "
                     f"Your ticket is #{ticket.id}; a support agent can now review the full conversation."
                 ),
-                meta={"ticket_id": ticket.id, "escalated": True},
+                meta={"ticket_id": ticket.id, "escalated": True, "actions": actions},
             )
             conversation = self.conversations.get(conversation.id) or conversation
             return FeedbackResult(conversation=conversation, assistant_message=assistant_message, escalated=True, ticket=ticket)
@@ -325,6 +381,7 @@ class ChatService:
             )
             conversation = self.conversations.get(conversation.id) or conversation
             ticket = self.escalation.escalate(conversation, summary=summary)
+            actions = self.actions.escalation_actions(ticket.id)
             assistant_message = self.conversations.add_message(
                 conversation,
                 MessageSender.ASSISTANT,
@@ -332,7 +389,7 @@ class ChatService:
                     "I do not have a meaningfully different approved fix to try next, so I escalated this to a technician. "
                     f"Your ticket is #{ticket.id}."
                 ),
-                meta={"ticket_id": ticket.id, "escalated": True, "escalation_reason": "no_alternate_kb"},
+                meta={"ticket_id": ticket.id, "escalated": True, "escalation_reason": "no_alternate_kb", "actions": actions},
             )
             conversation = self.conversations.get(conversation.id) or conversation
             return FeedbackResult(conversation=conversation, assistant_message=assistant_message, escalated=True, ticket=ticket)
@@ -359,6 +416,7 @@ class ChatService:
                 "failure_state": "user_marked_not_resolved",
                 "response_source": generated_response.source,
                 "response_error": generated_response.error,
+                "actions": self._support_actions(conversation.category or "GENERAL", 0.9, has_support_path=bool(entries)),
             },
         )
         conversation = self.conversations.get(conversation.id) or conversation
@@ -381,6 +439,7 @@ class ChatService:
             )
             conversation = self.conversations.get(conversation.id) or conversation
             ticket = self.escalation.escalate(conversation, summary=summary)
+            actions = self.actions.escalation_actions(ticket.id)
             assistant_message = self.conversations.add_message(
                 conversation,
                 MessageSender.ASSISTANT,
@@ -388,7 +447,7 @@ class ChatService:
                     "I understand this is frustrating. I escalated the issue to a technician with the context collected so far. "
                     f"Your ticket is #{ticket.id}."
                 ),
-                meta={**meta, "ticket_id": ticket.id, "escalated": True},
+                meta={**meta, "ticket_id": ticket.id, "escalated": True, "actions": actions},
             )
             conversation = self.conversations.get(conversation.id) or conversation
             return ChatResult(conversation=conversation, assistant_message=assistant_message, category=conversation.category or "GENERAL", kb_titles=[], escalated=True, ticket=ticket)
@@ -600,6 +659,9 @@ class ChatService:
             triage_reason=triage_reason,
             is_retry=is_retry,
         )
+
+    def _support_actions(self, category: str | None, confidence: float, *, has_support_path: bool) -> list[dict]:
+        return self.actions.actions_for_category(category, confidence=confidence, has_support_path=has_support_path)
 
     def _build_escalation_summary(self, conversation: Conversation, triage_decision: TriageDecision | None = None) -> str:
         context = triage_decision.collected_context if triage_decision else dict(conversation.collected_context or {})

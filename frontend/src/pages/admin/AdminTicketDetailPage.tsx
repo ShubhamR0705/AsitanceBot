@@ -3,7 +3,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { adminApi, ticketsApi } from "../../api/client";
 import { ChatBubble } from "../../components/chat/ChatBubble";
+import { TicketChatPanel } from "../../components/tickets/TicketChatPanel";
 import { AuditTimeline, TicketOperationalPanel } from "../../components/tickets/TicketOperationalPanel";
+import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { LinkButton } from "../../components/ui/LinkButton";
 import { PageTransition } from "../../components/ui/PageTransition";
@@ -20,12 +22,13 @@ export function AdminTicketDetailPage() {
   const id = Number(ticketId);
   const queryClient = useQueryClient();
   const ticket = useQuery({ queryKey: ["ticket", id], queryFn: () => ticketsApi.detail(id), enabled: Number.isFinite(id) });
-  const users = useQuery({ queryKey: ["admin-users"], queryFn: adminApi.users });
+  const users = useQuery({ queryKey: ["admin-users"], queryFn: () => adminApi.users() });
   const [status, setStatus] = useState<TicketStatus>("ESCALATED");
   const [priority, setPriority] = useState<TicketPriority>("MEDIUM");
   const [technicianId, setTechnicianId] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [resolutionNotes, setResolutionNotes] = useState("");
+  const [approvalNotes, setApprovalNotes] = useState("");
 
   const update = useMutation({
     mutationFn: () =>
@@ -40,6 +43,16 @@ export function AdminTicketDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["ticket", id] });
       queryClient.invalidateQueries({ queryKey: ["all-tickets"] });
       queryClient.invalidateQueries({ queryKey: ["admin-analytics"] });
+    }
+  });
+
+  const approval = useMutation({
+    mutationFn: (approval_status: "APPROVED" | "REJECTED") => ticketsApi.updateApproval(id, approval_status, approvalNotes || undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticket", id] });
+      queryClient.invalidateQueries({ queryKey: ["all-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-analytics"] });
+      setApprovalNotes("");
     }
   });
 
@@ -96,6 +109,8 @@ export function AdminTicketDetailPage() {
             </div>
           </div>
 
+          <TicketChatPanel ticket={ticket.data} />
+
           <AuditTimeline ticket={ticket.data} />
         </section>
 
@@ -140,6 +155,27 @@ export function AdminTicketDetailPage() {
             <span className="mb-2 block text-sm font-medium text-ink">Resolution</span>
             <Textarea value={resolutionNotes} onChange={(event) => setResolutionNotes(event.target.value)} />
           </label>
+          {ticket.data.request_type === "SOFTWARE_INSTALL" ? (
+            <div className="mt-5 rounded-lg border border-line bg-elevated p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-ink">Approval workflow</span>
+                <Badge tone={ticket.data.approval_status === "APPROVED" ? "success" : ticket.data.approval_status === "REJECTED" ? "error" : "warning"}>
+                  {ticket.data.approval_status.replaceAll("_", " ")}
+                </Badge>
+              </div>
+              <p className="mt-2 text-sm text-muted">Requested software: {ticket.data.requested_software ?? "Not specified"}</p>
+              <p className="mt-1 text-sm text-muted">Reason: {ticket.data.request_reason ?? "Not provided"}</p>
+              <Textarea className="mt-3" value={approvalNotes} onChange={(event) => setApprovalNotes(event.target.value)} placeholder="Approval note for the user and technician" />
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <Button type="button" variant="secondary" disabled={approval.isPending || ticket.data.approval_status === "APPROVED"} onClick={() => approval.mutate("APPROVED")}>
+                  Approve
+                </Button>
+                <Button type="button" variant="danger" disabled={approval.isPending || ticket.data.approval_status === "REJECTED"} onClick={() => approval.mutate("REJECTED")}>
+                  Reject
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Button type="submit" className="mt-5 w-full" isLoading={update.isPending}>
             Save
           </Button>

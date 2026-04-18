@@ -40,7 +40,7 @@ export function AdminAnalyticsOverview({ data }: AdminAnalyticsOverviewProps) {
         <MetricCard icon={Users} label="Total users" value={data?.total_users ?? 0} detail="People with platform access" tone="brand" />
         <MetricCard icon={Ticket} label="Total tickets" value={data?.total_tickets ?? 0} detail="All support cases" tone="info" />
         <MetricCard icon={MessageSquareMore} label="Active chats" value={data?.active_conversations ?? 0} detail="Conversations still open" tone="success" />
-        <MetricCard icon={AlertTriangle} label="Escalations" value={data?.escalated_tickets ?? 0} detail="Human review needed" tone="warning" />
+        <MetricCard icon={AlertTriangle} label="Escalations" value={data?.escalated_tickets ?? 0} detail={`${data?.pending_approvals ?? 0} approvals pending`} tone="warning" />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
@@ -278,7 +278,8 @@ function systemMetricData(data?: Analytics) {
   return [
     { name: "Clarifications", value: data?.clarification_requested ?? 0 },
     { name: "Helpful replies", value: data?.message_feedback?.helpful ?? 0 },
-    { name: "KB failure %", value: Math.round((data?.kb_failure_rate ?? 0) * 100) }
+    { name: "KB failure %", value: Math.round((data?.kb_failure_rate ?? 0) * 100) },
+    { name: "Pending approvals", value: data?.pending_approvals ?? 0 }
   ];
 }
 

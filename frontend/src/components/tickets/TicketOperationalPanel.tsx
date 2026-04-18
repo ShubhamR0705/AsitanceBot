@@ -8,10 +8,23 @@ export function TicketOperationalPanel({ ticket }: { ticket: Ticket }) {
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Metric label="Priority" value={<PriorityBadge priority={ticket.priority} />} />
       <Metric label="Routing" value={ticket.routing_group.replaceAll("_", " ")} />
-      <Metric label="Assignee" value={ticket.technician?.email ?? "Unassigned"} />
+      <Metric label="Assignee" value={ticket.technician ? `${ticket.technician.full_name} · ${ticket.assignment_source ?? "manual"}` : "Unassigned"} />
       <Metric label="SLA" value={ticket.sla_breached ? <Badge tone="error">Breached</Badge> : ticket.sla_due_at ? new Date(ticket.sla_due_at).toLocaleString() : "Not set"} />
+      {ticket.request_type === "SOFTWARE_INSTALL" ? (
+        <>
+          <Metric label="Request type" value={<Badge tone="warning">Software install</Badge>} />
+          <Metric label="Approval" value={<ApprovalBadge status={ticket.approval_status} />} />
+          <Metric label="Software" value={ticket.requested_software ?? "Not specified"} />
+          <Metric label="Approver" value={ticket.approved_by?.full_name ?? "Pending admin"} />
+        </>
+      ) : null}
     </div>
   );
+}
+
+function ApprovalBadge({ status }: { status: Ticket["approval_status"] }) {
+  const tone = status === "APPROVED" || status === "COMPLETED" ? "success" : status === "REJECTED" ? "error" : status === "PENDING_APPROVAL" ? "warning" : "neutral";
+  return <Badge tone={tone}>{status.replaceAll("_", " ")}</Badge>;
 }
 
 function Metric({ label, value }: { label: string; value: ReactNode }) {

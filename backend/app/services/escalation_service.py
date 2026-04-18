@@ -4,6 +4,7 @@ from app.models.audit_log import AuditAction
 from app.models.conversation import Conversation, MessageSender
 from app.models.ticket import Ticket, TicketPriority
 from app.repositories.user_repository import UserRepository
+from app.services.assignment_service import AssignmentService
 from app.repositories.ticket_repository import TicketRepository
 from app.services.audit_service import AuditService
 from app.services.notification_service import NotificationService
@@ -39,6 +40,7 @@ class EscalationService:
             routing_group=self.operations.routing_group_for_category(conversation.category or "GENERAL"),
             sla_due_at=self.operations.sla_due_at(priority),
         )
+        ticket = AssignmentService(self.db).auto_assign(ticket)
         self.audit.record(
             action=AuditAction.TICKET_CREATED,
             ticket_id=ticket.id,
@@ -51,6 +53,14 @@ class EscalationService:
             summary="AI support flow escalated this conversation.",
             new_value={"failure_count": conversation.failure_count, "category": conversation.category},
         )
+        if ticket.technician_id:
+            self.audit.record(
+                action=AuditAction.TICKET_ASSIGNED,
+                ticket_id=ticket.id,
+                previous_value={"technician_id": None},
+                new_value={"technician_id": ticket.technician_id, "assignment_source": ticket.assignment_source},
+                summary="Ticket auto-assigned on escalation.",
+            )
         user = UserRepository(self.db).get(conversation.user_id)
         if user:
             self.notifications.notify(
@@ -60,14 +70,34 @@ class EscalationService:
                 body="Your issue was escalated with the conversation context attached.",
                 email=True,
             )
-        self.notifications.notify_technicians(
-            ticket=ticket,
-            title=f"New escalated ticket #{ticket.id}",
-            body=(
-                f"A {ticket.priority.value.lower()} priority {ticket.category.replace('_', ' ').lower()} issue "
-                f"is waiting in the {ticket.routing_group} queue."
-            ),
-        )
+            if ticket.technician:
+                self.notifications.notify(
+                    recipient=user,
+                    ticket=ticket,
+                    title=f"Ticket #{ticket.id} assigned",
+                    body=f"{ticket.technician.full_name} has been assigned as your support specialist.",
+                    email=False,
+                )
+        if ticket.technician:
+            self.notifications.notify(
+                recipient=ticket.technician,
+                ticket=ticket,
+                title=f"New escalated ticket #{ticket.id} assigned to you",
+                body=(
+                    f"A {ticket.priority.value.lower()} priority {ticket.category.replace('_', ' ').lower()} issue "
+                    f"was auto-assigned from the {ticket.routing_group} queue."
+                ),
+                email=False,
+            )
+        else:
+            self.notifications.notify_technicians(
+                ticket=ticket,
+                title=f"New escalated ticket #{ticket.id}",
+                body=(
+                    f"A {ticket.priority.value.lower()} priority {ticket.category.replace('_', ' ').lower()} issue "
+                    f"is waiting in the {ticket.routing_group} queue."
+                ),
+            )
         if ticket.priority == TicketPriority.CRITICAL:
             self.notifications.notify_admins(
                 ticket=ticket,

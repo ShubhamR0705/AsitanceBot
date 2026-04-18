@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.conversation import Conversation
-from app.models.ticket import Ticket, TicketPriority, TicketStatus
+from app.models.ticket import Ticket, TicketApprovalStatus, TicketPriority, TicketRequestType, TicketStatus
+from app.models.ticket_message import TicketMessage
 
 
 class TicketRepository:
@@ -19,6 +20,8 @@ class TicketRepository:
                 selectinload(Ticket.conversation).selectinload(Conversation.messages),
                 selectinload(Ticket.user),
                 selectinload(Ticket.technician),
+                selectinload(Ticket.approved_by),
+                selectinload(Ticket.ticket_messages).selectinload(TicketMessage.sender),
                 selectinload(Ticket.audit_logs),
             )
             .where(Ticket.id == ticket_id)
@@ -31,7 +34,7 @@ class TicketRepository:
         return list(
             self.db.scalars(
                 select(Ticket)
-                .options(selectinload(Ticket.conversation), selectinload(Ticket.technician))
+                .options(selectinload(Ticket.conversation), selectinload(Ticket.technician), selectinload(Ticket.approved_by))
                 .where(Ticket.user_id == user_id)
                 .order_by(Ticket.updated_at.desc())
             )
@@ -42,7 +45,7 @@ class TicketRepository:
         return list(
             self.db.scalars(
                 select(Ticket)
-                .options(selectinload(Ticket.user), selectinload(Ticket.technician))
+                .options(selectinload(Ticket.user), selectinload(Ticket.technician), selectinload(Ticket.approved_by))
                 .where(Ticket.status.in_(actionable))
                 .order_by(Ticket.created_at.desc())
             )
@@ -52,7 +55,7 @@ class TicketRepository:
         return list(
             self.db.scalars(
                 select(Ticket)
-                .options(selectinload(Ticket.user), selectinload(Ticket.technician))
+                .options(selectinload(Ticket.user), selectinload(Ticket.technician), selectinload(Ticket.approved_by))
                 .order_by(Ticket.created_at.desc())
             )
         )
@@ -68,6 +71,12 @@ class TicketRepository:
         priority: TicketPriority = TicketPriority.MEDIUM,
         routing_group: str = "general",
         sla_due_at: datetime | None = None,
+        request_type: TicketRequestType = TicketRequestType.SUPPORT,
+        requested_software: str | None = None,
+        request_reason: str | None = None,
+        request_device: str | None = None,
+        approval_required: bool = False,
+        approval_status: TicketApprovalStatus = TicketApprovalStatus.NOT_REQUIRED,
     ) -> Ticket:
         existing = self.get_by_conversation_id(conversation_id)
         if existing:
@@ -83,21 +92,79 @@ class TicketRepository:
             priority=priority,
             routing_group=routing_group,
             sla_due_at=sla_due_at,
+            request_type=request_type,
+            requested_software=requested_software,
+            request_reason=request_reason,
+            request_device=request_device,
+            approval_required=approval_required,
+            approval_status=approval_status,
         )
         self.db.add(ticket)
         self.db.commit()
         self.db.refresh(ticket)
         return ticket
 
-    def update(self, ticket: Ticket, data: dict, technician_id: int | None = None) -> Ticket:
+    def create(
+        self,
+        *,
+        user_id: int,
+        category: str,
+        title: str,
+        description: str,
+        status: TicketStatus = TicketStatus.OPEN,
+        priority: TicketPriority = TicketPriority.MEDIUM,
+        routing_group: str = "general",
+        sla_due_at: datetime | None = None,
+        request_type: TicketRequestType = TicketRequestType.SUPPORT,
+        requested_software: str | None = None,
+        request_reason: str | None = None,
+        request_device: str | None = None,
+        approval_required: bool = False,
+        approval_status: TicketApprovalStatus = TicketApprovalStatus.NOT_REQUIRED,
+        conversation_id: int | None = None,
+    ) -> Ticket:
+        ticket = Ticket(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            category=category,
+            title=title[:180],
+            description=description,
+            status=status,
+            priority=priority,
+            routing_group=routing_group,
+            sla_due_at=sla_due_at,
+            request_type=request_type,
+            requested_software=requested_software,
+            request_reason=request_reason,
+            request_device=request_device,
+            approval_required=approval_required,
+            approval_status=approval_status,
+        )
+        self.db.add(ticket)
+        self.db.commit()
+        self.db.refresh(ticket)
+        return ticket
+
+    def update(self, ticket: Ticket, data: dict) -> Ticket:
         status = data.get("status")
         if status is not None:
             ticket.status = status
             if status in {TicketStatus.RESOLVED, TicketStatus.CLOSED} and ticket.resolved_at is None:
                 ticket.resolved_at = datetime.utcnow()
-        if technician_id is not None:
-            ticket.technician_id = technician_id
+        if "technician_id" in data:
+            ticket.technician_id = data["technician_id"]
         for field in (
+            "assignment_source",
+            "assigned_at",
+            "request_type",
+            "requested_software",
+            "request_reason",
+            "request_device",
+            "approval_required",
+            "approval_status",
+            "approved_by_id",
+            "approved_at",
+            "approval_notes",
             "internal_notes",
             "resolution_notes",
             "priority",
@@ -110,7 +177,7 @@ class TicketRepository:
             "last_reopened_at",
             "reopened_from_ticket_id",
         ):
-            if data.get(field) is not None:
+            if field in data:
                 setattr(ticket, field, data[field])
         self.db.add(ticket)
         self.db.commit()

@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditAction
 from app.models.conversation import ConversationStatus, MessageSender
-from app.models.ticket import Ticket, TicketPriority, TicketStatus
+from app.models.ticket import Ticket, TicketApprovalStatus, TicketPriority, TicketRequestType, TicketStatus
+from app.models.ticket_message import TicketMessage, TicketMessageSenderRole
 from app.models.user import User, UserRole
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.ticket_repository import TicketRepository
@@ -27,8 +28,11 @@ class TicketService:
     def list_for_user(self, user: User) -> list[Ticket]:
         return self.tickets.list_for_user(user.id)
 
-    def list_queue(self) -> list[Ticket]:
-        return self.tickets.list_queue()
+    def list_queue(self, current_user: User | None = None) -> list[Ticket]:
+        tickets = self.tickets.list_queue()
+        if current_user and current_user.role == UserRole.TECHNICIAN:
+            return [ticket for ticket in tickets if ticket.technician_id in {None, current_user.id}]
+        return tickets
 
     def list_all(self) -> list[Ticket]:
         return self.tickets.list_all()
@@ -39,14 +43,24 @@ class TicketService:
             return None
         if current_user.role == UserRole.USER and ticket.user_id != current_user.id:
             return None
+        if current_user.role == UserRole.TECHNICIAN and ticket.technician_id not in {None, current_user.id}:
+            return None
         return ticket
 
     def update_ticket(self, current_user: User, ticket: Ticket, data: dict) -> Ticket:
         previous = self._snapshot(ticket)
-        if data.get("technician_id") is not None:
+        if "technician_id" in data and data["technician_id"] is not None:
             data["technician_id"] = self._authorized_technician_id(current_user, data["technician_id"])
+        elif "technician_id" in data and current_user.role == UserRole.TECHNICIAN:
+            raise ValueError("Technicians cannot unassign tickets")
         elif current_user.role == UserRole.TECHNICIAN and ticket.technician_id is None:
             data["technician_id"] = current_user.id
+
+        if "technician_id" in data and data.get("technician_id") != ticket.technician_id:
+            data["assigned_at"] = datetime.utcnow() if data.get("technician_id") is not None else None
+            data["assignment_source"] = "manual" if data.get("technician_id") is not None else None
+
+        self._enforce_approval_gate(current_user, ticket, data)
 
         if data.get("priority") is not None:
             data["sla_due_at"] = self.operations.sla_due_at(data["priority"], ticket.created_at)
@@ -55,11 +69,17 @@ class TicketService:
         if self._is_first_response_action(data) and ticket.first_response_at is None:
             data["first_response_at"] = datetime.utcnow()
 
-        updated = self.tickets.update(
-            ticket,
-            data,
-            technician_id=data.get("technician_id"),
-        )
+        if ticket.request_type == TicketRequestType.SOFTWARE_INSTALL:
+            status = data.get("status")
+            if status == TicketStatus.IN_PROGRESS and ticket.approval_status == TicketApprovalStatus.APPROVED:
+                data["approval_status"] = TicketApprovalStatus.IN_PROGRESS
+            if status in {TicketStatus.RESOLVED, TicketStatus.CLOSED} and ticket.approval_status in {
+                TicketApprovalStatus.APPROVED,
+                TicketApprovalStatus.IN_PROGRESS,
+            }:
+                data["approval_status"] = TicketApprovalStatus.COMPLETED
+
+        updated = self.tickets.update(ticket, data)
         was_breached = previous["sla_breached"]
         is_breached = self.operations.refresh_sla_state(updated)
         if is_breached != was_breached:
@@ -89,6 +109,87 @@ class TicketService:
             conversation = self.conversations.get(updated.conversation_id)
             if conversation and conversation.status.value != "RESOLVED":
                 self.conversations.update_state(conversation, status=ConversationStatus.RESOLVED)
+        return self.tickets.get(updated.id) or updated
+
+    def list_ticket_messages(self, current_user: User, ticket: Ticket) -> list[TicketMessage]:
+        self._authorize_ticket_message(current_user, ticket)
+        return list(ticket.ticket_messages)
+
+    def add_ticket_message(self, current_user: User, ticket: Ticket, content: str) -> TicketMessage:
+        self._authorize_ticket_message(current_user, ticket)
+        if ticket.status in {TicketStatus.RESOLVED, TicketStatus.CLOSED}:
+            raise ValueError("Ticket chat is read-only after resolution or closure")
+
+        sender_role = TicketMessageSenderRole(current_user.role.value)
+        message = TicketMessage(
+            ticket_id=ticket.id,
+            sender_id=current_user.id,
+            sender_role=sender_role,
+            content=content.strip(),
+        )
+        self.db.add(message)
+
+        if current_user.role in {UserRole.TECHNICIAN, UserRole.ADMIN} and ticket.first_response_at is None:
+            ticket.first_response_at = datetime.utcnow()
+            self.db.add(ticket)
+
+        self.db.commit()
+        self.db.refresh(message)
+        self.audit.record(
+            action=AuditAction.TICKET_MESSAGE_ADDED,
+            ticket_id=ticket.id,
+            actor=current_user,
+            new_value={"sender_role": current_user.role.value},
+            summary="Ticket chat message added.",
+        )
+        self._notify_ticket_message(current_user, ticket)
+        return message
+
+    def update_approval(self, current_user: User, ticket: Ticket, approval_status: TicketApprovalStatus, notes: str | None = None) -> Ticket:
+        if current_user.role != UserRole.ADMIN:
+            raise ValueError("Only admins can update approval status")
+        if ticket.request_type != TicketRequestType.SOFTWARE_INSTALL or not ticket.approval_required:
+            raise ValueError("Ticket does not require approval")
+        if approval_status not in {TicketApprovalStatus.APPROVED, TicketApprovalStatus.REJECTED}:
+            raise ValueError("Approval can only be approved or rejected from this action")
+
+        previous = self._snapshot(ticket)
+        data = {
+            "approval_status": approval_status,
+            "approval_notes": notes,
+            "approved_by_id": current_user.id,
+            "approved_at": datetime.utcnow(),
+        }
+        if approval_status == TicketApprovalStatus.REJECTED:
+            data["status"] = TicketStatus.CLOSED
+            data["resolution_notes"] = notes or "Software installation request was rejected."
+            data["resolved_at"] = datetime.utcnow()
+
+        updated = self.tickets.update(ticket, data)
+        self.audit.record(
+            action=AuditAction.APPROVAL_UPDATED,
+            ticket_id=updated.id,
+            actor=current_user,
+            previous_value={"approval_status": previous.get("approval_status")},
+            new_value={"approval_status": updated.approval_status.value, "approval_notes": notes},
+            summary=f"Software installation request {approval_status.value.lower().replace('_', ' ')}.",
+        )
+        self.notifications.notify(
+            recipient=updated.user,
+            actor=current_user,
+            ticket=updated,
+            title=f"Ticket #{updated.id} approval {approval_status.value.lower().replace('_', ' ')}",
+            body=notes or f"Your software installation request was {approval_status.value.lower()}.",
+        )
+        if approval_status == TicketApprovalStatus.APPROVED and updated.technician:
+            self.notifications.notify(
+                recipient=updated.technician,
+                actor=current_user,
+                ticket=updated,
+                title=f"Ticket #{updated.id} approved for installation",
+                body="Approval is complete. You can proceed with the software installation workflow.",
+                email=False,
+            )
         return self.tickets.get(updated.id) or updated
 
     def reopen_ticket(self, current_user: User, ticket: Ticket, note: str | None = None) -> Ticket:
@@ -181,6 +282,9 @@ class TicketService:
             "routing_group": ticket.routing_group,
             "sla_breached": ticket.sla_breached,
             "reopen_count": ticket.reopen_count,
+            "assignment_source": ticket.assignment_source,
+            "approval_status": ticket.approval_status.value,
+            "request_type": ticket.request_type.value,
         }
 
     def _record_update_audit(self, current_user: User, ticket: Ticket, previous: dict, data: dict) -> None:
@@ -228,6 +332,15 @@ class TicketService:
                 new_value={"resolution_notes_added": True},
                 summary="Resolution or user-facing note added.",
             )
+        if previous.get("approval_status") != current.get("approval_status"):
+            self.audit.record(
+                action=AuditAction.APPROVAL_UPDATED,
+                ticket_id=ticket.id,
+                actor=current_user,
+                previous_value={"approval_status": previous.get("approval_status")},
+                new_value={"approval_status": current.get("approval_status")},
+                summary="Ticket approval status updated.",
+            )
 
     def _send_update_notifications(self, current_user: User, ticket: Ticket, previous: dict, data: dict) -> None:
         if previous.get("technician_id") != ticket.technician_id and ticket.technician:
@@ -237,6 +350,14 @@ class TicketService:
                 ticket=ticket,
                 title=f"Ticket #{ticket.id} assigned",
                 body=f"You were assigned a {ticket.priority.value.lower()} priority {ticket.category.replace('_', ' ').lower()} ticket.",
+            )
+            self.notifications.notify(
+                recipient=ticket.user,
+                actor=current_user,
+                ticket=ticket,
+                title=f"Ticket #{ticket.id} assigned",
+                body=f"{ticket.technician.full_name} has been assigned to your ticket.",
+                email=False,
             )
         if previous.get("status") != ticket.status.value:
             self.notifications.notify(
@@ -279,3 +400,54 @@ class TicketService:
         else:
             self.notifications.notify_technicians(actor=actor, ticket=ticket, title=title, body=body)
         self.notifications.notify_admins(actor=actor, ticket=ticket, title=title, body=body)
+
+    def _authorize_ticket_message(self, current_user: User, ticket: Ticket) -> None:
+        if current_user.role == UserRole.USER:
+            if ticket.user_id != current_user.id:
+                raise ValueError("Ticket not found")
+            return
+        if current_user.role == UserRole.TECHNICIAN:
+            if ticket.technician_id != current_user.id:
+                raise ValueError("Technicians can only chat on tickets assigned to them")
+            return
+        if current_user.role == UserRole.ADMIN:
+            return
+        raise ValueError("Ticket not found")
+
+    def _notify_ticket_message(self, current_user: User, ticket: Ticket) -> None:
+        if current_user.role == UserRole.USER:
+            if ticket.technician:
+                self.notifications.notify(
+                    recipient=ticket.technician,
+                    actor=current_user,
+                    ticket=ticket,
+                    title=f"User replied on ticket #{ticket.id}",
+                    body="The user added a message to the assigned ticket chat.",
+                    email=False,
+                )
+            else:
+                self.notifications.notify_technicians(
+                    actor=current_user,
+                    ticket=ticket,
+                    title=f"User replied on unassigned ticket #{ticket.id}",
+                    body="A user added a message to an unassigned ticket.",
+                )
+            return
+        self.notifications.notify(
+            recipient=ticket.user,
+            actor=current_user,
+            ticket=ticket,
+            title=f"Support replied on ticket #{ticket.id}",
+            body="A support message was added to your ticket.",
+        )
+
+    def _enforce_approval_gate(self, current_user: User, ticket: Ticket, data: dict) -> None:
+        status = data.get("status")
+        if (
+            current_user.role == UserRole.TECHNICIAN
+            and ticket.request_type == TicketRequestType.SOFTWARE_INSTALL
+            and ticket.approval_required
+            and ticket.approval_status not in {TicketApprovalStatus.APPROVED, TicketApprovalStatus.IN_PROGRESS, TicketApprovalStatus.COMPLETED}
+            and status in {TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED, TicketStatus.CLOSED}
+        ):
+            raise ValueError("Software installation cannot proceed until approval is complete")

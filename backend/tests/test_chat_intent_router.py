@@ -24,8 +24,8 @@ SCENARIOS = [
     ("", ChatIntentType.EMPTY),
     ("     ", ChatIntentType.EMPTY),
     ("this is useless", ChatIntentType.ABUSIVE),
-    ("connect me to human", ChatIntentType.ABUSIVE),
-    ("give me a technician", ChatIntentType.ABUSIVE),
+    ("connect me to human", ChatIntentType.SUPPORT_REQUEST),
+    ("give me a technician", ChatIntentType.SUPPORT_REQUEST),
     ("hi vpn not working", ChatIntentType.SUPPORT_REQUEST),
     ("hello my outlook is stuck", ChatIntentType.SUPPORT_REQUEST),
     ("vpn conection not wrking", ChatIntentType.SUPPORT_REQUEST),
@@ -254,15 +254,16 @@ def test_irrelevant_input_is_redirected_without_kb(db):
     assert result.kb_titles == []
 
 
-def test_human_request_without_issue_asks_for_context(db):
+def test_human_request_without_issue_creates_controlled_handoff_ticket(db):
     user = UserRepository(db).get_by_email("user@company.com")
     service = ChatService(db)
     conversation = service.create_conversation(user)
 
     result = service.submit_message(user, conversation.id, "connect me to human")
 
-    assert result.escalated is False
-    assert result.assistant_message.meta["intent_type"] == "ABUSIVE"
+    assert result.escalated is True
+    assert result.ticket is not None
+    assert result.assistant_message.meta["intent_type"] == "SUPPORT_REQUEST"
 
 
 def test_human_request_with_existing_support_context_escalates(db):

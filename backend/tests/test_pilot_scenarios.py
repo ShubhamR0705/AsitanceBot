@@ -35,7 +35,7 @@ SCENARIOS = [
     ("company app install failed", ChatIntentType.SUPPORT_REQUEST, {"SOFTWARE"}, False),
     ("i cannot work, please help urgently", ChatIntentType.SUPPORT_REQUEST, {"GENERAL"}, True),
     ("my account is locked and i need payroll access", ChatIntentType.SUPPORT_REQUEST, {"PASSWORD", "ACCESS"}, True),
-    ("connect me to a human now", ChatIntentType.ABUSIVE, set(), False),
+    ("connect me to a human now", ChatIntentType.SUPPORT_REQUEST, {"GENERAL"}, True),
     ("security issue, suspicious login detected", ChatIntentType.SUPPORT_REQUEST, {"ACCESS", "GENERAL"}, True),
 ]
 

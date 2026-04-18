@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { ticketsApi } from "../../api/client";
 import { ChatBubble } from "../../components/chat/ChatBubble";
+import { TicketChatPanel } from "../../components/tickets/TicketChatPanel";
 import { AuditTimeline, TicketOperationalPanel } from "../../components/tickets/TicketOperationalPanel";
 import { Button } from "../../components/ui/Button";
 import { LinkButton } from "../../components/ui/LinkButton";
@@ -62,6 +63,12 @@ export function TicketDetailPage() {
               {ticket.data.resolution_notes}
             </div>
           ) : null}
+          {ticket.data.request_type === "SOFTWARE_INSTALL" ? (
+            <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              Approval status: <strong>{ticket.data.approval_status.replaceAll("_", " ")}</strong>
+              {ticket.data.approval_notes ? ` · ${ticket.data.approval_notes}` : ""}
+            </div>
+          ) : null}
           {ticket.data.status === "RESOLVED" || ticket.data.status === "CLOSED" ? (
             <div className="mt-5 rounded-lg border border-line bg-elevated p-4">
               <p className="text-sm font-semibold text-ink">Still need help?</p>
@@ -72,6 +79,8 @@ export function TicketDetailPage() {
             </div>
           ) : null}
         </section>
+
+        <TicketChatPanel ticket={ticket.data} />
 
         <section className="rounded-lg border border-line bg-surface shadow-soft">
           <div className="border-b border-line px-5 py-4">

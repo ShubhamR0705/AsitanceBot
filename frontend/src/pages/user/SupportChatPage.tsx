@@ -3,6 +3,7 @@ import { AnimatePresence } from "framer-motion";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { chatApi } from "../../api/client";
+import { ChatActionButtons } from "../../components/chat/ChatActionButtons";
 import { ChatBubble } from "../../components/chat/ChatBubble";
 import { ChatComposer } from "../../components/chat/ChatComposer";
 import { FeedbackActions } from "../../components/chat/FeedbackActions";
@@ -107,6 +108,7 @@ export function SupportChatPage() {
               {messages.map((message) => (
                 <div key={message.id}>
                   <ChatBubble message={message} />
+                  {message.sender === "ASSISTANT" ? <ChatActionButtons message={message} /> : null}
                   {message.sender === "ASSISTANT" && getGuidedQuestions(message.meta).length ? (
                     <GuidedQuestionOptions
                       questions={getGuidedQuestions(message.meta)}

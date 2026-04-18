@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ticketsApi } from "../../api/client";
 import { ChatBubble } from "../../components/chat/ChatBubble";
+import { TicketChatPanel } from "../../components/tickets/TicketChatPanel";
 import { AuditTimeline, TicketOperationalPanel } from "../../components/tickets/TicketOperationalPanel";
 import { Button } from "../../components/ui/Button";
 import { LinkButton } from "../../components/ui/LinkButton";
@@ -78,6 +79,11 @@ export function TechnicianTicketDetailPage() {
               <TicketOperationalPanel ticket={ticket.data} />
             </div>
             <p className="mt-5 whitespace-pre-line rounded-lg border border-line bg-elevated p-4 text-sm leading-6 text-muted">{ticket.data.description}</p>
+            {ticket.data.request_type === "SOFTWARE_INSTALL" && ticket.data.approval_status === "PENDING_APPROVAL" ? (
+              <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                This installation request is waiting for admin approval. You can message the user, but work should not begin until approval is complete.
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-lg border border-line bg-surface shadow-soft">
@@ -88,6 +94,8 @@ export function TechnicianTicketDetailPage() {
               {ticket.data.conversation?.messages?.map((message) => <ChatBubble key={message.id} message={message} />)}
             </div>
           </div>
+
+          <TicketChatPanel ticket={ticket.data} />
 
           <AuditTimeline ticket={ticket.data} />
         </section>

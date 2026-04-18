@@ -18,6 +18,7 @@ class AdminService:
         total_users = self.db.query(User).count()
         status_breakdown = Counter(ticket.status.value for ticket in tickets)
         category_breakdown = Counter(ticket.category for ticket in tickets)
+        approval_breakdown = Counter(ticket.approval_status.value for ticket in tickets if ticket.approval_required)
         stage_breakdown = Counter(conversation.triage_stage.value for conversation in conversations)
         urgency_breakdown = Counter((conversation.last_triage or {}).get("urgency_level", "unknown") for conversation in conversations)
         escalation_reason_breakdown = Counter(
@@ -83,6 +84,9 @@ class AdminService:
             "open_tickets": status_breakdown.get(TicketStatus.OPEN.value, 0),
             "escalated_tickets": status_breakdown.get(TicketStatus.ESCALATED.value, 0),
             "resolved_tickets": status_breakdown.get(TicketStatus.RESOLVED.value, 0),
+            "assigned_tickets": sum(1 for ticket in tickets if ticket.technician_id is not None),
+            "unassigned_tickets": sum(1 for ticket in tickets if ticket.technician_id is None),
+            "pending_approvals": approval_breakdown.get("PENDING_APPROVAL", 0),
             "active_conversations": sum(1 for conversation in conversations if conversation.status == ConversationStatus.ACTIVE),
             "avg_resolution_hours": round(sum(resolved_durations) / len(resolved_durations), 2) if resolved_durations else None,
             "kb_failure_rate": round(kb_escalated_conversations / kb_shown_conversations, 2) if kb_shown_conversations else 0.0,
@@ -90,6 +94,7 @@ class AdminService:
             "clarification_requested": clarification_requested,
             "status_breakdown": dict(status_breakdown),
             "category_breakdown": dict(category_breakdown),
+            "approval_breakdown": dict(approval_breakdown),
             "stage_breakdown": dict(stage_breakdown),
             "urgency_breakdown": dict(urgency_breakdown),
             "escalation_reason_breakdown": dict(escalation_reason_breakdown),

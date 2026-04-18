@@ -5,6 +5,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.message_feedback import MessageFeedback
 from app.models.notification import Notification
 from app.models.ticket import Ticket
+from app.models.ticket_message import TicketMessage
 from app.models.user import User
 
-__all__ = ["AuditLog", "Base", "Conversation", "KnowledgeBase", "Message", "MessageFeedback", "Notification", "Ticket", "User"]
+__all__ = ["AuditLog", "Base", "Conversation", "KnowledgeBase", "Message", "MessageFeedback", "Notification", "Ticket", "TicketMessage", "User"]

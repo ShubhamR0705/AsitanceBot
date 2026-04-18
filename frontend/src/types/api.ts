@@ -4,7 +4,18 @@ export type ConversationStage = "INTAKE" | "CLARIFYING" | "SUGGESTING_FIX" | "WA
 export type MessageSender = "USER" | "ASSISTANT" | "TECHNICIAN" | "SYSTEM";
 export type TicketStatus = "OPEN" | "ESCALATED" | "IN_PROGRESS" | "WAITING_FOR_USER" | "RESOLVED" | "CLOSED" | "REOPENED";
 export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type TicketRequestType = "SUPPORT" | "SOFTWARE_INSTALL";
+export type TicketApprovalStatus = "NOT_REQUIRED" | "REQUESTED" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "IN_PROGRESS" | "COMPLETED";
 export type GuidedQuestionInputType = "single_select" | "multi_select";
+export type ChatActionType = "link" | "internal_route" | "trigger";
+
+export interface ChatAction {
+  label: string;
+  type: ChatActionType;
+  url?: string;
+  route?: string;
+  trigger?: string;
+}
 
 export interface GuidedQuestionOption {
   label: string;
@@ -44,6 +55,7 @@ export interface Message {
   sender: MessageSender;
   content: string;
   meta?: Record<string, unknown> | null;
+  actions?: ChatAction[];
   created_at: string;
 }
 
@@ -73,6 +85,17 @@ export interface Ticket {
   routing_group: string;
   status: TicketStatus;
   priority: TicketPriority;
+  request_type: TicketRequestType;
+  assignment_source: string | null;
+  assigned_at: string | null;
+  requested_software: string | null;
+  request_reason: string | null;
+  request_device: string | null;
+  approval_required: boolean;
+  approval_status: TicketApprovalStatus;
+  approved_by_id: number | null;
+  approved_at: string | null;
+  approval_notes: string | null;
   internal_notes: string | null;
   resolution_notes: string | null;
   first_response_at: string | null;
@@ -86,8 +109,20 @@ export interface Ticket {
   resolved_at: string | null;
   user?: User | null;
   technician?: User | null;
+  approved_by?: User | null;
   conversation?: Conversation | null;
   audit_logs?: AuditLog[];
+  ticket_messages?: TicketMessage[];
+}
+
+export interface TicketMessage {
+  id: number;
+  ticket_id: number;
+  sender_id: number | null;
+  sender_role: UserRole;
+  content: string;
+  created_at: string;
+  sender?: User | null;
 }
 
 export interface AuditLog {
@@ -129,6 +164,9 @@ export interface Analytics {
   open_tickets: number;
   escalated_tickets: number;
   resolved_tickets: number;
+  assigned_tickets: number;
+  unassigned_tickets: number;
+  pending_approvals: number;
   active_conversations: number;
   avg_resolution_hours: number | null;
   kb_failure_rate: number;
@@ -136,6 +174,7 @@ export interface Analytics {
   clarification_requested: number;
   status_breakdown: Record<string, number>;
   category_breakdown: Record<string, number>;
+  approval_breakdown: Record<string, number>;
   stage_breakdown: Record<string, number>;
   urgency_breakdown: Record<string, number>;
   escalation_reason_breakdown: Record<string, number>;

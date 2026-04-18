@@ -8,6 +8,8 @@ import type {
   NotificationListResponse,
   StructuredResponse,
   Ticket,
+  TicketApprovalStatus,
+  TicketMessage,
   TicketPriority,
   TicketStatus,
   TokenResponse,
@@ -112,12 +114,27 @@ export const ticketsApi = {
       resolution_notes?: string;
     }
   ) => apiFetch<Ticket>(`/tickets/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  reopen: (id: number, note?: string) => apiFetch<Ticket>(`/tickets/${id}/reopen`, { method: "POST", body: JSON.stringify({ note }) })
+  reopen: (id: number, note?: string) => apiFetch<Ticket>(`/tickets/${id}/reopen`, { method: "POST", body: JSON.stringify({ note }) }),
+  messages: (id: number) => apiFetch<TicketMessage[]>(`/tickets/${id}/messages`),
+  sendMessage: (id: number, content: string) =>
+    apiFetch<TicketMessage>(`/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  updateApproval: (id: number, approval_status: TicketApprovalStatus, approval_notes?: string) =>
+    apiFetch<Ticket>(`/tickets/${id}/approval`, { method: "PATCH", body: JSON.stringify({ approval_status, approval_notes }) })
 };
 
 export const adminApi = {
   analytics: () => apiFetch<Analytics>("/admin/analytics"),
-  users: () => apiFetch<User[]>("/admin/users"),
+  users: (params?: { role?: UserRole | "ALL"; is_active?: boolean | "ALL" }) => {
+    const search = new URLSearchParams();
+    if (params?.role && params.role !== "ALL") search.set("role", params.role);
+    if (params?.is_active !== undefined && params.is_active !== "ALL") search.set("is_active", String(params.is_active));
+    return apiFetch<User[]>(`/admin/users${search.toString() ? `?${search}` : ""}`);
+  },
+  createUser: (payload: { email: string; full_name: string; password: string; role: UserRole; is_active?: boolean }) =>
+    apiFetch<User>("/admin/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (userId: number, payload: { email?: string; full_name?: string; role?: UserRole; is_active?: boolean }) =>
+    apiFetch<User>(`/admin/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deactivateUser: (userId: number) => apiFetch<User>(`/admin/users/${userId}`, { method: "DELETE" }),
   updateRole: (userId: number, role: UserRole) =>
     apiFetch<User>(`/admin/users/${userId}/role`, { method: "PATCH", body: JSON.stringify({ role }) }),
   knowledgeBase: () => apiFetch<KnowledgeBaseEntry[]>("/admin/knowledge-base"),

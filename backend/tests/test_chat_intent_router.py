@@ -3,6 +3,8 @@ import pytest
 from app.repositories.user_repository import UserRepository
 from app.services.chat_intent_service import ChatIntentService, ChatIntentType
 from app.services.chat_service import ChatService
+from app.services.diagnostic_playbooks import DiagnosticField
+from app.services.guided_question_service import GuidedQuestionService
 
 
 SCENARIOS = [
@@ -144,6 +146,67 @@ def test_email_clarification_uses_email_client_options(db):
 
     assert result.assistant_message.meta["field"] == "email_client"
     assert [option["label"] for option in result.assistant_message.meta["options"]][:3] == ["Outlook", "Webmail", "Apple Mail"]
+
+
+def test_login_clarification_uses_service_options(db):
+    user = UserRepository(db).get_by_email("user@company.com")
+    service = ChatService(db)
+    conversation = service.create_conversation(user)
+
+    result = service.submit_message(user, conversation.id, "having problem while logging in")
+
+    assert result.category == "ACCESS"
+    assert result.assistant_message.meta["field"] == "affected_app"
+    labels = [option["label"] for option in result.assistant_message.meta["options"]]
+    assert labels[:5] == ["Email (Outlook/Gmail)", "VPN", "Company Portal", "Internal Tool", "HR System"]
+    assert "Yes" not in labels
+    assert "No" not in labels
+    assert "Not sure" not in labels
+
+
+def test_vpn_clarification_uses_vpn_issue_options(db):
+    user = UserRepository(db).get_by_email("user@company.com")
+    service = ChatService(db)
+    conversation = service.create_conversation(user)
+
+    result = service.submit_message(user, conversation.id, "vpn not working")
+
+    assert result.assistant_message.meta["field"] == "vpn_issue_type"
+    assert [option["label"] for option in result.assistant_message.meta["options"]][:4] == [
+        "Cannot connect",
+        "Connected but no internet",
+        "Slow connection",
+        "Disconnecting frequently",
+    ]
+
+
+def test_wifi_clarification_uses_wifi_issue_options(db):
+    user = UserRepository(db).get_by_email("user@company.com")
+    service = ChatService(db)
+    conversation = service.create_conversation(user)
+
+    result = service.submit_message(user, conversation.id, "wifi issue")
+
+    assert result.assistant_message.meta["field"] == "wifi_issue_type"
+    assert [option["label"] for option in result.assistant_message.meta["options"]][:4] == [
+        "No networks visible",
+        "Connected but no internet",
+        "Slow internet",
+        "Frequent disconnect",
+    ]
+
+
+def test_guided_question_generation_skips_free_text_fields():
+    service = GuidedQuestionService()
+
+    questions = service.build(
+        fields=(DiagnosticField("error_message", "Exact error", "What exact error message do you see?"),),
+        missing_fields=["error_message"],
+        questions=["What exact error message do you see?"],
+        category="ACCESS",
+    )
+
+    assert questions == []
 
 
 def test_irrelevant_input_is_redirected_without_kb(db):

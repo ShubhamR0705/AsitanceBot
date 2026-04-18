@@ -18,6 +18,7 @@ export interface GuidedQuestion {
   field: string;
   input_type: GuidedQuestionInputType;
   options: GuidedQuestionOption[];
+  source?: "rule_based" | "llm_generated";
 }
 
 export interface StructuredResponse {

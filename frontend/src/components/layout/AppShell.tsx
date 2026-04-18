@@ -55,10 +55,11 @@ export function AppShell() {
   const queryClient = useQueryClient();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const notifications = useQuery({ queryKey: ["notifications"], queryFn: notificationsApi.list, refetchInterval: 30000 });
+  const notificationQueryKey = ["notifications", user?.id, user?.role];
+  const notifications = useQuery({ queryKey: notificationQueryKey, queryFn: notificationsApi.list, refetchInterval: 30000, enabled: Boolean(user) });
   const markRead = useMutation({
     mutationFn: notificationsApi.markRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] })
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: notificationQueryKey })
   });
 
   if (!user) return null;
@@ -67,6 +68,7 @@ export function AppShell() {
   const pageTitle = navItems.find((item) => location.pathname === item.to)?.label ?? "AssistIQ";
 
   const onLogout = () => {
+    queryClient.removeQueries({ queryKey: ["notifications"] });
     logout();
     navigate("/login");
   };

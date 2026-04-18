@@ -20,8 +20,19 @@ PHRASE_HINTS: dict[str, str] = {
     "cant login": "PASSWORD",
     "can't login": "PASSWORD",
     "cannot login": "PASSWORD",
+    "login issue": "ACCESS",
+    "log in": "ACCESS",
+    "logging in": "ACCESS",
+    "sign in": "ACCESS",
+    "signing in": "ACCESS",
     "office login": "PASSWORD",
     "account locked": "PASSWORD",
+    "forgot password": "PASSWORD",
+    "reset link": "PASSWORD",
+    "password reset": "PASSWORD",
+    "mfa code": "ACCESS",
+    "mfa prompt": "ACCESS",
+    "authenticator": "ACCESS",
     "access denied": "ACCESS",
     "permission denied": "ACCESS",
     "payroll access": "ACCESS",
@@ -69,6 +80,15 @@ class ClassificationService:
         best_category, best_score, matched_keywords = max(scores, key=lambda item: item[1])
         if best_score == 0:
             return ClassificationResult(category="GENERAL", confidence=0.25, matched_keywords=[])
+
+        if best_category == "ACCESS" and "vpn" in lower_text and not any(
+            term in lower_text
+            for term in ["access", "account", "login", "log in", "logging in", "password", "portal", "sign in", "signin", "sso"]
+        ):
+            vpn_score = next((score for category, score, _ in scores if category == "VPN"), 0)
+            if vpn_score > 0:
+                vpn_matches = next((matches for category, _, matches in scores if category == "VPN"), ["vpn"])
+                return ClassificationResult(category="VPN", confidence=min(0.95, 0.55 + vpn_score * 0.15), matched_keywords=vpn_matches)
 
         confidence = min(0.95, 0.45 + best_score * 0.15)
         return ClassificationResult(category=best_category, confidence=confidence, matched_keywords=matched_keywords)

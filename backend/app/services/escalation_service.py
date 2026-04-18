@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditAction
 from app.models.conversation import Conversation, MessageSender
-from app.models.ticket import Ticket
+from app.models.ticket import Ticket, TicketPriority
 from app.repositories.user_repository import UserRepository
 from app.repositories.ticket_repository import TicketRepository
 from app.services.audit_service import AuditService
@@ -59,6 +59,20 @@ class EscalationService:
                 title=f"Ticket #{ticket.id} created",
                 body="Your issue was escalated with the conversation context attached.",
                 email=True,
+            )
+        self.notifications.notify_technicians(
+            ticket=ticket,
+            title=f"New escalated ticket #{ticket.id}",
+            body=(
+                f"A {ticket.priority.value.lower()} priority {ticket.category.replace('_', ' ').lower()} issue "
+                f"is waiting in the {ticket.routing_group} queue."
+            ),
+        )
+        if ticket.priority == TicketPriority.CRITICAL:
+            self.notifications.notify_admins(
+                ticket=ticket,
+                title=f"Critical ticket #{ticket.id} created",
+                body="A critical support issue was escalated and may need operational attention.",
             )
         return ticket
 

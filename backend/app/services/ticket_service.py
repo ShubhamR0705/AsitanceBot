@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditAction
 from app.models.conversation import ConversationStatus, MessageSender
-from app.models.ticket import Ticket, TicketStatus
+from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.models.user import User, UserRole
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.ticket_repository import TicketRepository
@@ -73,7 +73,7 @@ class TicketService:
                     new_value={"sla_breached": True},
                     summary="Ticket breached its SLA target.",
                 )
-                self._notify_assigned_or_user(updated, current_user, "SLA breached", f"Ticket #{updated.id} is past its SLA target.")
+                self._notify_sla_breach(updated, current_user)
         self._record_update_audit(current_user, updated, previous, data)
         self._send_update_notifications(current_user, updated, previous, data)
         if updated.conversation_id and data.get("resolution_notes"):
@@ -143,6 +143,20 @@ class TicketService:
                 ticket=updated,
                 title=f"Ticket #{updated.id} reopened",
                 body="A previously resolved ticket was reopened for follow-up.",
+            )
+        else:
+            self.notifications.notify_technicians(
+                actor=current_user,
+                ticket=updated,
+                title=f"Ticket #{updated.id} reopened in queue",
+                body="A previously resolved ticket was reopened and is waiting in the support queue.",
+            )
+        if updated.priority == TicketPriority.CRITICAL:
+            self.notifications.notify_admins(
+                actor=current_user,
+                ticket=updated,
+                title=f"Critical ticket #{updated.id} reopened",
+                body="A critical ticket was reopened and may need operational review.",
             )
         return self.tickets.get(updated.id) or updated
 
@@ -232,6 +246,15 @@ class TicketService:
                 title=f"Ticket #{ticket.id} status changed",
                 body=f"Status changed from {previous.get('status')} to {ticket.status.value}.",
             )
+            if ticket.technician and current_user.id != ticket.technician_id:
+                self.notifications.notify(
+                    recipient=ticket.technician,
+                    actor=current_user,
+                    ticket=ticket,
+                    title=f"Ticket #{ticket.id} status changed",
+                    body=f"Status changed from {previous.get('status')} to {ticket.status.value}.",
+                    email=False,
+                )
         if data.get("resolution_notes"):
             self.notifications.notify(
                 recipient=ticket.user,
@@ -240,7 +263,19 @@ class TicketService:
                 title=f"Ticket #{ticket.id} updated",
                 body="Support added a resolution or next step to your ticket.",
             )
+        if data.get("priority") == TicketPriority.CRITICAL and previous.get("priority") != TicketPriority.CRITICAL.value:
+            self.notifications.notify_admins(
+                actor=current_user,
+                ticket=ticket,
+                title=f"Ticket #{ticket.id} marked critical",
+                body="A ticket priority was raised to critical.",
+            )
 
-    def _notify_assigned_or_user(self, ticket: Ticket, actor: User, title: str, body: str) -> None:
-        recipient = ticket.technician or ticket.user
-        self.notifications.notify(recipient=recipient, actor=actor, ticket=ticket, title=title, body=body)
+    def _notify_sla_breach(self, ticket: Ticket, actor: User) -> None:
+        title = f"SLA breached for ticket #{ticket.id}"
+        body = "This ticket is past its SLA target and needs operational attention."
+        if ticket.technician:
+            self.notifications.notify(recipient=ticket.technician, actor=actor, ticket=ticket, title=title, body=body, email=False)
+        else:
+            self.notifications.notify_technicians(actor=actor, ticket=ticket, title=title, body=body)
+        self.notifications.notify_admins(actor=actor, ticket=ticket, title=title, body=body)

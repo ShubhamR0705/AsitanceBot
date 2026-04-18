@@ -117,6 +117,7 @@ class TriageService:
                 fields=playbook.required_fields,
                 missing_fields=missing_fields,
                 questions=questions,
+                category=category,
             )
             return TriageDecision(
                 action=TriageAction.ASK_CLARIFYING_QUESTIONS,
@@ -349,6 +350,7 @@ class TriageService:
             "data breach",
             "account compromised",
             "unauthorized login",
+            "suspicious login",
             "stolen laptop",
             "laptop was stolen",
             "device stolen",

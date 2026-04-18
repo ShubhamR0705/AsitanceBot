@@ -12,6 +12,7 @@ const question: GuidedQuestion = {
   options: [
     { label: "Yes - normal websites work", value: "yes" },
     { label: "No - internet is down", value: "no" },
+    { label: "I am not sure", value: "unknown" },
     { label: "Other", value: "other", requires_text: true }
   ]
 };
@@ -57,5 +58,39 @@ describe("GuidedQuestionOptions", () => {
     expect(parsed).toHaveLength(1);
     expect(parsed[0].field).toBe("device_os");
     expect(parsed[0].options.map((option) => option.label)).toContain("Ubuntu/Linux");
+  });
+
+  it("does not render generic yes/no options for service selection questions", () => {
+    const parsed = getGuidedQuestions({
+      structured_questions: [
+        {
+          type: "question",
+          question: "Which application or company service are you trying to access?",
+          field: "affected_app",
+          input_type: "single_select",
+          options: [
+            { label: "Yes", value: "yes" },
+            { label: "No", value: "no" },
+            { label: "Not sure", value: "unknown" },
+            { label: "Other", value: "other", requires_text: true }
+          ]
+        }
+      ]
+    });
+
+    expect(parsed).toEqual([]);
+  });
+
+  it("builds service options from legacy app clarification metadata", () => {
+    const parsed = getGuidedQuestions({
+      questions: ["Which application or company service are you trying to access?"],
+      missing_fields: ["affected_app", "error_message"]
+    });
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].field).toBe("affected_app");
+    expect(parsed[0].options.map((option) => option.label)).toEqual(
+      expect.arrayContaining(["Email (Outlook/Gmail)", "VPN", "Company Portal", "Internal Tool", "HR System"])
+    );
   });
 });

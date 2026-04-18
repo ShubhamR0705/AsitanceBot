@@ -189,6 +189,7 @@ class IssueUnderstandingService:
             "lost device",
             "account compromised",
             "unauthorized login",
+            "suspicious login",
             "data breach",
         ]
         return any(term in lower for term in terms)

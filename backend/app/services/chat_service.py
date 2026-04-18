@@ -463,6 +463,16 @@ class ChatService:
 
         if field == "account_locked" and value == "yes":
             merged["error_type"] = "account_locked"
+        if field == "password_issue_type":
+            merged["error_type"] = value
+            if value == "account_locked":
+                merged["account_locked"] = "yes"
+            if value == "mfa_issue":
+                merged["mfa_available"] = "no"
+        if field in {"vpn_issue_type", "wifi_issue_type"}:
+            merged["issue_type"] = value
+            if value == "connected_no_internet":
+                merged.setdefault("internet_working", "no")
         if field == "mfa_prompt" and value == "no":
             merged["mfa_available"] = "no"
         if field == "internet_working" and value == "no":

@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: assistiq-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head && python scripts/seed_demo.py
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: APP_NAME
+        value: AssistIQ
+      - key: ENVIRONMENT
+        value: production
+      - key: AUTO_CREATE_TABLES
+        value: "false"
+      - key: SEED_DEMO_DATA
+        value: "false"
+      - key: DATABASE_SSL_MODE
+        value: require
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "480"
+      - key: CORS_ORIGIN_REGEX
+        value: https://.*\.vercel\.app
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_OPENAI_ENDPOINT
+        value: https://aaif-codebridge-llm.cognitiveservices.azure.com/
+      - key: AZURE_OPENAI_DEPLOYMENT
+        value: codeBridge-gtp5-chat
+      - key: AZURE_OPENAI_API_VERSION
+        value: 2025-01-01-preview
+      - key: AZURE_OPENAI_TIMEOUT_SECONDS
+        value: "15"
+      - key: AZURE_OPENAI_MAX_COMPLETION_TOKENS
+        value: "700"
+      - key: AZURE_OPENAI_TEMPERATURE
+        value: ""
+      - key: DEMO_ADMIN_EMAIL
+        value: admin@company.com
+      - key: DEMO_ADMIN_PASSWORD
+        value: AdminPass123!
+      - key: DEMO_TECHNICIAN_EMAIL
+        value: tech@company.com
+      - key: DEMO_TECHNICIAN_PASSWORD
+        value: TechPass123!
+      - key: DEMO_USER_EMAIL
+        value: user@company.com
+      - key: DEMO_USER_PASSWORD
+        value: UserPass123!

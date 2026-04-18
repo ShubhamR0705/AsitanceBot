@@ -235,6 +235,9 @@ export function getGuidedQuestions(meta: Record<string, unknown> | null | undefi
   if (isGuidedQuestion(meta)) {
     return [meta];
   }
+  if (meta?.type === "question") {
+    logInvalidGuidedQuestion(meta);
+  }
 
   const rawQuestions = meta?.structured_questions;
   if (Array.isArray(rawQuestions)) {
@@ -242,6 +245,7 @@ export function getGuidedQuestions(meta: Record<string, unknown> | null | undefi
     if (structuredQuestions.length) {
       return structuredQuestions;
     }
+    rawQuestions.forEach(logInvalidGuidedQuestion);
   }
 
   return getLegacyGuidedQuestions(meta);
@@ -331,4 +335,11 @@ function isQuestionOptionAligned(question: GuidedQuestion) {
     return false;
   }
   return true;
+}
+
+function logInvalidGuidedQuestion(value: unknown) {
+  if (typeof console === "undefined" || typeof console.warn !== "function") {
+    return;
+  }
+  console.warn("AssistIQ ignored invalid guided question metadata", value);
 }

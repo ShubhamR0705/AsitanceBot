@@ -126,11 +126,14 @@ class ChatService:
         )
 
         if triage_decision.action == TriageAction.ASK_CLARIFYING_QUESTIONS:
-            question_meta = self._structured_question_meta(triage_decision.structured_questions)
+            structured_questions = self.triage.guided_questions.sanitize_all(triage_decision.structured_questions, category)
+            question_meta = self._structured_question_meta(structured_questions)
+            triage_meta = triage_decision.to_meta()
+            triage_meta["structured_questions"] = structured_questions
             assistant_message = self.conversations.add_message(
                 conversation,
                 MessageSender.ASSISTANT,
-                self._build_clarifying_content(category, triage_decision),
+                self._build_clarifying_content(category, triage_decision, structured_questions),
                 meta={
                     "category": category,
                     "confidence": triage_decision.confidence,
@@ -139,8 +142,8 @@ class ChatService:
                     "matched_keywords": classification.matched_keywords,
                     "intent_type": intent.intent_type.value,
                     "intent_confidence": intent.confidence,
+                    **triage_meta,
                     **question_meta,
-                    **triage_decision.to_meta(),
                 },
             )
             conversation = self.conversations.get(conversation.id) or conversation
@@ -513,11 +516,12 @@ class ChatService:
             "structured_questions": structured_questions,
         }
 
-    def _build_clarifying_content(self, category: str, triage_decision: TriageDecision) -> str:
-        if triage_decision.structured_questions:
+    def _build_clarifying_content(self, category: str, triage_decision: TriageDecision, structured_questions: list[dict] | None = None) -> str:
+        questions = structured_questions if structured_questions is not None else triage_decision.structured_questions
+        if questions:
             label = category.replace("_", " ").title()
-            if len(triage_decision.structured_questions) == 1:
-                return str(triage_decision.structured_questions[0]["question"])
+            if len(questions) == 1:
+                return str(questions[0]["question"])
             return f"I categorized this as {label}. Answer these quick checks so I can suggest the right fix."
         return self.triage.build_clarifying_response(category, triage_decision.questions)
 

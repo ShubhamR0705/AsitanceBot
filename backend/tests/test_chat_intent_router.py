@@ -178,6 +178,9 @@ def test_vpn_clarification_uses_vpn_issue_options(db):
         "Slow connection",
         "Disconnecting frequently",
     ]
+    assert "Yes" not in [option["label"] for option in result.assistant_message.meta["options"]]
+    assert "No" not in [option["label"] for option in result.assistant_message.meta["options"]]
+    assert "Not sure" not in [option["label"] for option in result.assistant_message.meta["options"]]
 
 
 def test_wifi_clarification_uses_wifi_issue_options(db):
@@ -194,6 +197,9 @@ def test_wifi_clarification_uses_wifi_issue_options(db):
         "Slow internet",
         "Frequent disconnect",
     ]
+    assert "Yes" not in [option["label"] for option in result.assistant_message.meta["options"]]
+    assert "No" not in [option["label"] for option in result.assistant_message.meta["options"]]
+    assert "Not sure" not in [option["label"] for option in result.assistant_message.meta["options"]]
 
 
 def test_guided_question_generation_skips_free_text_fields():
@@ -207,6 +213,34 @@ def test_guided_question_generation_skips_free_text_fields():
     )
 
     assert questions == []
+
+
+def test_guided_question_sanitizer_repairs_bad_access_options():
+    service = GuidedQuestionService()
+
+    questions = service.sanitize_all(
+        [
+            {
+                "type": "question",
+                "question": "Which application or company service are you trying to access?",
+                "field": "affected_app",
+                "input_type": "single_select",
+                "options": [
+                    {"label": "Yes", "value": "yes"},
+                    {"label": "No", "value": "no"},
+                    {"label": "Not sure", "value": "unknown"},
+                    {"label": "Other", "value": "other", "requires_text": True},
+                ],
+            }
+        ],
+        "ACCESS",
+    )
+
+    labels = [option["label"] for option in questions[0]["options"]]
+    assert labels[:5] == ["Email (Outlook/Gmail)", "VPN", "Company Portal", "Internal Tool", "HR System"]
+    assert "Yes" not in labels
+    assert "No" not in labels
+    assert "Not sure" not in labels
 
 
 def test_irrelevant_input_is_redirected_without_kb(db):

@@ -287,6 +287,39 @@ class GuidedQuestionService:
 
         return structured_questions
 
+    def sanitize_all(self, questions: list[dict], category: str | None) -> list[dict]:
+        category_key = (category or "GENERAL").upper()
+        sanitized: list[dict] = []
+        used_fields: set[str] = set()
+        for question in questions:
+            candidate = self.sanitize(question, category_key)
+            if not candidate or candidate["field"] in used_fields:
+                continue
+            sanitized.append(candidate)
+            used_fields.add(candidate["field"])
+        return sanitized[:3]
+
+    def sanitize(self, question: dict, category: str | None) -> dict | None:
+        category_key = (category or "GENERAL").upper()
+        if not self._has_question_shape(question):
+            return None
+
+        candidate = dict(question)
+        candidate.setdefault("source", "rule_based")
+        if self._validate_question(candidate, category_key):
+            return candidate
+
+        field_key = str(candidate.get("field") or "")
+        repaired_options = self._options_for_field(field_key, category_key)
+        repaired = {
+            **candidate,
+            "options": repaired_options,
+            "source": "rule_based",
+        }
+        if self._validate_question(repaired, category_key):
+            return repaired
+        return None
+
     def _field_for_question(self, question: str, fields: tuple[DiagnosticField, ...], missing_fields: list[str]) -> str | None:
         for field in fields:
             if field.key in missing_fields and field.question == question:
@@ -301,6 +334,15 @@ class GuidedQuestionService:
 
     def _options_for_field(self, field_key: str, category: str) -> list[dict]:
         return self.CATEGORY_FIELD_OPTIONS.get((category, field_key)) or self.FIELD_OPTIONS.get(field_key, [])
+
+    def _has_question_shape(self, question: dict) -> bool:
+        return (
+            question.get("type") == "question"
+            and isinstance(question.get("question"), str)
+            and isinstance(question.get("field"), str)
+            and question.get("input_type") in {"single_select", "multi_select"}
+            and isinstance(question.get("options"), list)
+        )
 
     def _validate_question(self, question: dict, category: str) -> bool:
         text = str(question.get("question") or "").strip()

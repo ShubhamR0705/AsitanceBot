@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { AlertTriangle, BookOpen, Users } from "lucide-react";
 import { adminApi, ticketsApi } from "../../api/client";
+import { AdminAnalyticsOverview } from "../../components/admin/AdminAnalyticsOverview";
 import { PageTransition } from "../../components/ui/PageTransition";
-import { StatCard } from "../../components/ui/StatCard";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 
 export function AdminDashboardPage() {
@@ -13,14 +14,17 @@ export function AdminDashboardPage() {
   return (
     <PageTransition>
       <div className="space-y-6">
-        <section className="grid gap-4 md:grid-cols-4">
-          <StatCard label="Users" value={analytics.data?.total_users ?? 0} detail="All active roles" />
-          <StatCard label="Tickets" value={analytics.data?.total_tickets ?? 0} detail="Total created" />
-          <StatCard label="Escalated" value={analytics.data?.escalated_tickets ?? 0} detail="Waiting for support" />
-          <StatCard label="Resolved" value={analytics.data?.resolved_tickets ?? 0} detail="Marked solved" />
+        <section className="flex flex-col gap-2">
+          <p className="text-sm font-semibold uppercase text-brand-700">Admin dashboard</p>
+          <h1 className="text-2xl font-semibold text-ink">Support operations at a glance</h1>
+          <p className="max-w-2xl text-sm leading-6 text-muted">
+            Track ticket health, chatbot performance, technician workload, and KB outcomes without reading raw logs.
+          </p>
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+        {analytics.isLoading ? <Skeleton className="h-[520px]" /> : <AdminAnalyticsOverview data={analytics.data} />}
+
+        <section className="grid gap-6 xl:grid-cols-[1fr_0.7fr]">
           <div className="rounded-lg border border-line bg-surface p-6 shadow-soft">
             <div className="mb-5 flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-yellow-700" />
@@ -48,12 +52,12 @@ export function AdminDashboardPage() {
             <Link to="/admin/users" className="rounded-lg border border-line bg-surface p-6 shadow-soft transition hover:border-brand-500/50">
               <Users className="h-6 w-6 text-brand-700" />
               <h3 className="mt-4 text-base font-semibold text-ink">Manage users</h3>
-              <p className="mt-2 text-sm leading-6 text-muted">Promote technicians and admins.</p>
+              <p className="mt-2 text-sm leading-6 text-muted">Update roles and keep access aligned with support coverage.</p>
             </Link>
             <Link to="/admin/knowledge-base" className="rounded-lg border border-line bg-surface p-6 shadow-soft transition hover:border-brand-500/50">
               <BookOpen className="h-6 w-6 text-accent-600" />
               <h3 className="mt-4 text-base font-semibold text-ink">Knowledge base</h3>
-              <p className="mt-2 text-sm leading-6 text-muted">Maintain approved troubleshooting content.</p>
+              <p className="mt-2 text-sm leading-6 text-muted">Improve answers where users still need technician help.</p>
             </Link>
           </div>
         </section>
@@ -61,4 +65,3 @@ export function AdminDashboardPage() {
     </PageTransition>
   );
 }
-

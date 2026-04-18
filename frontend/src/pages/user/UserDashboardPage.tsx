@@ -30,15 +30,17 @@ export function UserDashboardPage() {
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-ink">Start with AI support</h2>
-                <p className="mt-1 text-sm text-muted">Common IT issues are handled instantly. Failed attempts become technician tickets.</p>
+                <p className="mt-1 text-sm text-muted">
+                  Describe what is not working. AssistIQ will guide you through the next step and bring in support when needed.
+                </p>
               </div>
               <Bot className="h-8 w-8 text-brand-600" />
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               {[
-                { icon: Bot, title: "Classify", text: "Issue category is detected from your message." },
-                { icon: CheckCircle2, title: "Suggest", text: "Approved KB steps are returned." },
-                { icon: Ticket, title: "Escalate", text: "Two failed attempts create a ticket." }
+                { icon: Bot, title: "Tell us the issue", text: "Use everyday language and include the app, device, or error if you have it." },
+                { icon: CheckCircle2, title: "Try guided steps", text: "Follow approved fixes one step at a time." },
+                { icon: Ticket, title: "Get support handoff", text: "If it is still not solved, a technician gets the details already collected." }
               ].map((item) => (
                 <div key={item.title} className="rounded-lg border border-line bg-elevated p-4">
                   <item.icon className="h-5 w-5 text-brand-700" />

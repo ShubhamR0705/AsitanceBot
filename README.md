@@ -485,10 +485,10 @@ The assistant does not show `Resolved` / `Not Resolved` actions while it is stil
 By default, AssistIQ uses deterministic classification, retrieval, and response text when no Azure OpenAI key is configured. To enable OpenAI-assisted understanding and response generation, add your key to the root `.env` file:
 
 ```env
-AZURE_OPENAI_API_KEY=your-key-here
-AZURE_OPENAI_ENDPOINT=https://aaif-codebridge-llm.cognitiveservices.azure.com/
-AZURE_OPENAI_DEPLOYMENT=codeBridge-gtp5-chat
-AZURE_OPENAI_API_VERSION=2025-01-01-preview
+AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_DEPLOYMENT=
+AZURE_OPENAI_API_VERSION=
 ```
 
 The backend builds this chat-completions URL internally:
@@ -509,9 +509,9 @@ For Docker, either export the variables before starting Compose:
 
 ```bash
 export AZURE_OPENAI_API_KEY=your-key-here
-export AZURE_OPENAI_ENDPOINT="https://aaif-codebridge-llm.cognitiveservices.azure.com/"
-export AZURE_OPENAI_DEPLOYMENT="codeBridge-gtp5-chat"
-export AZURE_OPENAI_API_VERSION="2025-01-01-preview"
+export AZURE_OPENAI_ENDPOINT=
+export AZURE_OPENAI_DEPLOYMENT=
+export AZURE_OPENAI_
 docker compose up --build -d
 ```
 

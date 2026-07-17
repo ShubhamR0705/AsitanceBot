@@ -2,6 +2,10 @@
 
 AssistIQ is a production-oriented MVP for AI-assisted IT support. Users describe IT issues in chat, the backend classifies the issue, retrieves approved knowledge base content, returns bounded troubleshooting steps, and escalates to a human technician after two failed attempts.
 
+## Demo Video
+
+<video src="AssitIQ%20Demo%20Video.webm" controls="controls" style="max-width: 100%;"></video>
+
 ## What Is Included
 
 - FastAPI backend with PostgreSQL, SQLAlchemy, Alembic, Pydantic, JWT auth, password hashing, and role-based access control.
